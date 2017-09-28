@@ -21,7 +21,7 @@ Bug description and exploitation
 
 The VirtualBox code that implements the emulation of the Intel 82540EM Ethernet Controller, in ``src/VBox/Devices/Network/DevE1000.cpp``, has part of the functionality of the hardware TCP Segmentation in the function ``e1kFallbackAddToFrame()``__:
 
-https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L4286
+__ https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L4286
 
 .. code-block:: c
 
