@@ -21,7 +21,7 @@ Bug description and exploitation
 
 The VirtualBox code that implements the emulation of the Intel 82540EM Ethernet Controller (in ``src/VBox/Devices/Network/DevE1000.cpp``), in the function ``e1kFallbackAddToFrame``, implements the hardware TCP Segmentation:
 
-.. code-block:: c
+```c
 
    static int e1kFallbackAddToFrame(PE1KSTATE pThis, E1KTXDESC *pDesc,
                                     bool fOnWorkerThread)
@@ -37,6 +37,8 @@ The VirtualBox code that implements the emulation of the Intel 82540EM Ethernet 
                                pThis->contextTSE.dw3.u16MSS;
        Assert(u16MaxPktLen != 0);
        Assert(u16MaxPktLen < E1K_MAX_TX_PKT_SIZE);
+
+```
 
 This function correctly checks that the max TX packet length (``u16MaxPktLen``) is below the standard maximum of 16288 bytes (``E1K_MAX_TX_PKT_SIZE``), but does it in the form of an ``Assert`` macro that will be disabled in a release build, effectively leaving the check useless for the end user. This can be contrasted to the analogous function ``e1kAddToFrame``, which enforces the check with an explicit ``if`` instead of the ``Assert``:
 
