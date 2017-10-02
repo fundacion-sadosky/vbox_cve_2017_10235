@@ -1,9 +1,6 @@
-*******************************************************
-CVE-2017-10235: VirtualBox E1000 device buffer overflow
-*******************************************************
+# CVE-2017-10235: VirtualBox E1000 device buffer overflow
 
-Introduction
-============
+## Introduction
 
 The following document details a bug found in VirtualBox v5.1.22 (now fixed in v5.1.24), in the guest device emulation component `DevE1000` (*Intel 82540EM Ethernet Controller Emulation*), in the function `e1kFallbackAddToFrame`, which leads to a buffer overflow in the host when the guest OS is controlled by an attacker.
 
@@ -16,8 +13,7 @@ The vulnerability was corroborated with both a Linux (Ubuntu 16.04) and a Window
 Since control structures (including function pointers) can be overwritten with attacker controlled data, it is safe to assume that remote code execution could be achieved in many scenarios. Oracle assigned a low CVSS score to this bug because it regarded that it had a `None` confidentiality risk and a `Low` integrity, which we believe does not reflect the full compromising potentiality of this bug (an explanation for the possibility of RCE is given below).
 
 
-Bug description and exploitation
-================================
+## Bug description and exploitation
 
 The VirtualBox code that implements the emulation of the Intel 82540EM Ethernet Controller (in `src/VBox/Devices/Network/DevE1000.cpp`), in the function [`e1kFallbackAddToFrame`][e1kFallbackAddToFrame], implements the hardware TCP Segmentation:
 
@@ -210,14 +206,12 @@ This seems to happen because [`e1kLocateTxPacket`][e1kLocateTxPacket] prematurel
 This translates to the requirement that the first packet sent to the device (after setting the loopback mode) has to be the one that triggers the overflow, otherwise the VM will hang (ending with a DoS rather than an RCE).
 
 
-Proof of concept
-================
+## Proof of concept
 
 Because the setup of the network device is far from trivial, and to avoid building a custom driver for it, the E1000 driver of a generic Linux kernel was modified to generate the descriptors (both context and data) that trigger the overflow. This modified kernel is available for [download][poc_download] from this repo. It has been tested in an Ubuntu 16.04 guest, causing a crash both in Linux and Windows hosts. A detailed description is available [here](./poc/).
 
 
-Possible solutions
-==================
+## Possible solutions
 
 The vulnerability was fixed in [Changeset 67974][Changeset_67974] (`bugref:8881`). The checks made as `Assert` in `e1kFallbackAddToFrame` were converted to explicit checks as `if` statements, that now remain active in a release build (similar to what was already done in `e1kAddToFrame`). Also `cbTxAlloc` is now set to zero in both branches (loopback mode and normal mode) in `e1kXmitAllocBuf`.
 
