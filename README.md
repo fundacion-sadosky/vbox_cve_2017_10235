@@ -213,14 +213,13 @@ This translates to the requirement that the first packet sent to the device (aft
 Proof of concept
 ================
 
-Because the setup of the network device is far from trivial, and to avoid building a custom driver for it, the E1000 driver of a generic Linux kernel was modified to generate the descriptors (both context and data) that trigger the overflow. This modified kernel is available for `download <https://github.com/fundacion-sadosky/vbox_cve_2017_10235/releases/download/v1.0/linux-image-4.8.0-vbox-e1k-buffer-overflow-poc_4.8.0-1_amd64.deb>`_ from this repo. It has been tested in an Ubuntu 16.04 guest, causing a crash both in Linux and Windows hosts. A detailed description is available `here <./poc/>`_.
+Because the setup of the network device is far from trivial, and to avoid building a custom driver for it, the E1000 driver of a generic Linux kernel was modified to generate the descriptors (both context and data) that trigger the overflow. This modified kernel is available for [download][poc_download] from this repo. It has been tested in an Ubuntu 16.04 guest, causing a crash both in Linux and Windows hosts. A detailed description is available [here](./poc/).
 
 
 Possible solutions
 ==================
 
-The vulnerability was fixed in `Changeset 67974 <https://www.virtualbox.org/changeset/67974/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp
->`_ (`bugref:8881`). The checks made as `Assert()` in `e1kFallbackAddToFrame` were converted to explicit checks as `if` statements, that now remain active in a release build (similar to what was already done in `e1kAddToFrame`). Also `cbTxAlloc` is now set to zero in both branches (loopback mode and normal mode) in `e1kXmitAllocBuf`.
+The vulnerability was fixed in [Changeset 67974][Changeset_67974] (`bugref:8881`). The checks made as `Assert` in `e1kFallbackAddToFrame` were converted to explicit checks as `if` statements, that now remain active in a release build (similar to what was already done in `e1kAddToFrame`). Also `cbTxAlloc` is now set to zero in both branches (loopback mode and normal mode) in `e1kXmitAllocBuf`.
 
 An additional (defensive) check suggested here, not implemented in the changeset, could be to place, in `e1kFallbackAddSegment` (and similarly in `e1kAddToFrame`), before the call to `PDMDevHlpPhysRead`, to explicitly check for potential overflow the buffer with guest memory (mainly that `u16TxPktLen` plus `u16Len` be less that the `aTxPacketFallback` buffer length).
 
@@ -228,7 +227,7 @@ An additional (defensive) check suggested here, not implemented in the changeset
 [e1kFallbackAddToFrame]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L4351
 [e1kAddToFrame]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L4419
 [e1kXmitAllocBuf]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L3684
-[e1kXmitDesc]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L48107
+[e1kXmitDesc]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L4795
 [e1kFallbackAddToFrame_call]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L4898
 [e1kFallbackAddSegment_call]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L4364
 [e1kFallbackAddSegment]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L4153
@@ -236,3 +235,5 @@ An additional (defensive) check suggested here, not implemented in the changeset
 [g_aE1kRegMap]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L1363
 [cbTxAlloc]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L1166
 [e1kLocateTxPacket]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L4985
+[poc_download]: https://github.com/fundacion-sadosky/vbox_cve_2017_10235/releases/download/v1.0/linux-image-4.8.0-vbox-e1k-buffer-overflow-poc_4.8.0-1_amd64.deb
+[Changeset_67974]: https://www.virtualbox.org/changeset/67974/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp
