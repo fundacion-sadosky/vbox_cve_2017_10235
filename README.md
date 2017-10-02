@@ -39,19 +39,19 @@ This function correctly checks that the max TX packet length (`u16MaxPktLen`) is
 
 ```c
 
-   static bool e1kAddToFrame(PE1KSTATE pThis, RTGCPHYS PhysAddr,
-                             uint32_t cbFragment)
-   {
-       PPDMSCATTERGATHER   pTxSg    = pThis->CTX_SUFF(pTxSg);
-       bool const          fGso     = e1kXmitIsGsoBuf(pTxSg);
-       uint32_t const      cbNewPkt = cbFragment + pThis->u16TxPktLen;
+static bool e1kAddToFrame(PE1KSTATE pThis, RTGCPHYS PhysAddr,
+                         uint32_t cbFragment)
+{
+   PPDMSCATTERGATHER   pTxSg    = pThis->CTX_SUFF(pTxSg);
+   bool const          fGso     = e1kXmitIsGsoBuf(pTxSg);
+   uint32_t const      cbNewPkt = cbFragment + pThis->u16TxPktLen;
 
-       if (RT_UNLIKELY( !fGso && cbNewPkt > E1K_MAX_TX_PKT_SIZE ))
-       {
-           E1kLog(("%s Transmit packet is too large: %u > %u(max)\n",
-                   pThis->szPrf, cbNewPkt, E1K_MAX_TX_PKT_SIZE));
-           return false;
-       }
+   if (RT_UNLIKELY( !fGso && cbNewPkt > E1K_MAX_TX_PKT_SIZE ))
+   {
+       E1kLog(("%s Transmit packet is too large: %u > %u(max)\n",
+               pThis->szPrf, cbNewPkt, E1K_MAX_TX_PKT_SIZE));
+       return false;
+   }
 ```
 
 The difference between the use of the normal function (`e1kAddToFrame`) and the fallback (`e1kFallbackAddToFrame`) is decided in `e1kXmitDesc()` and  depends on two factors: that the TSE flag is enabled in the data/context descriptors (controlled by the OS using the guest machine) and that the GSO flag is disabled. The latter depends on many factors, and hence there are many ways to disable it, but the most convenient is to enable the loopback mode, which is configured through the Receive Control Register (in the `RCTL.LBM` bits), also controlled by the guest OS.
@@ -60,98 +60,98 @@ Enabling the loopback mode will make the function [`e1kXmitAllocBuf`][e1kXmitAll
 
 ```c
 
-   if (RT_LIKELY(GET_BITS(RCTL, LBM) != RCTL_LBM_TCVR))
-   {
+if (RT_LIKELY(GET_BITS(RCTL, LBM) != RCTL_LBM_TCVR))
+{
 
-      ...
+  ...
 
-   }
-   else
-   {
-     /* Create a loopback using the fallback buffer and preallocated SG. */
-     AssertCompileMemberSize(E1KSTATE, uTxFallback.Sg, 8 * sizeof(size_t));
-     pSg = &pThis->uTxFallback.Sg;
-     pSg->fFlags      = PDMSCATTERGATHER_FLAGS_MAGIC |
-                        PDMSCATTERGATHER_FLAGS_OWNER_3;
-     pSg->cbUsed      = 0;
-     pSg->cbAvailable = 0;
-     pSg->pvAllocator = pThis;
-     pSg->pvUser      = NULL; /* No GSO here. */
-     pSg->cSegs       = 1;
-     pSg->aSegs[0].pvSeg = pThis->aTxPacketFallback;
-     pSg->aSegs[0].cbSeg = sizeof(pThis->aTxPacketFallback);
-   }
+}
+else
+{
+ /* Create a loopback using the fallback buffer and preallocated SG. */
+ AssertCompileMemberSize(E1KSTATE, uTxFallback.Sg, 8 * sizeof(size_t));
+ pSg = &pThis->uTxFallback.Sg;
+ pSg->fFlags      = PDMSCATTERGATHER_FLAGS_MAGIC |
+                    PDMSCATTERGATHER_FLAGS_OWNER_3;
+ pSg->cbUsed      = 0;
+ pSg->cbAvailable = 0;
+ pSg->pvAllocator = pThis;
+ pSg->pvUser      = NULL; /* No GSO here. */
+ pSg->cSegs       = 1;
+ pSg->aSegs[0].pvSeg = pThis->aTxPacketFallback;
+ pSg->aSegs[0].cbSeg = sizeof(pThis->aTxPacketFallback);
+}
 ```
 
 This will cause the call to the function `e1kXmitIsGsoBuf` (inside [`e1kXmitDesc`][e1kXmitDesc]) to return `False` and, with the TSE enabled in the data descriptor, the execution flow will go to [`e1kFallbackAddToFrame`][e1kFallbackAddToFrame_call] (instead of the safer function `e1kAddToFrame` with the correct check).
 
 ```c
 
-  /*
-   * Add the descriptor data to the frame.  If the frame is complete,
-   * transmit it and reset the u16TxPktLen field.
-   */
-  if (e1kXmitIsGsoBuf(pThis->CTX_SUFF(pTxSg)))
-  {
+/*
+ * Add the descriptor data to the frame.  If the frame is complete,
+ * transmit it and reset the u16TxPktLen field.
+ */
+if (e1kXmitIsGsoBuf(pThis->CTX_SUFF(pTxSg)))
+{
 
-    ...
+  ...
 
-  }
-  else if (!pDesc->data.cmd.fTSE)
-  {
+}
+else if (!pDesc->data.cmd.fTSE)
+{
 
-    ...
+  ...
 
-  }
-  else
-  {
-      STAM_COUNTER_INC(&pThis->StatTxPathFallback);
-      rc = e1kFallbackAddToFrame(pThis, pDesc, fOnWorkerThread);
-  }
+}
+else
+{
+    STAM_COUNTER_INC(&pThis->StatTxPathFallback);
+    rc = e1kFallbackAddToFrame(pThis, pDesc, fOnWorkerThread);
+}
 ```
 
 Inside `e1kFallbackAddToFrame`, with the aforementioned check disabled in a release build, the MSS can be set arbitrarily large (up to 64K minus the HDRLEN), hence allowing an arbitrarily large `DTALEN` to be passed to [`e1kFallbackAddSegment`][e1kFallbackAddSegment_call]:
 
 ```c
 
-   /*
-   * Carve out segments.
-   */
-   int rc;
-   do
-   {
-     /* Calculate how many bytes we have left in this TCP segment */
-     uint32_t cb = u16MaxPktLen - pThis->u16TxPktLen;
-     if (cb > pDesc->data.cmd.u20DTALEN)
-     {
-         /* This descriptor fits completely into current segment */
-         cb = pDesc->data.cmd.u20DTALEN;
-         rc = e1kFallbackAddSegment(pThis, pDesc->data.u64BufAddr, cb,
-                     pDesc->data.cmd.fEOP /*fSend*/, fOnWorkerThread);
+/*
+* Carve out segments.
+*/
+int rc;
+do
+{
+ /* Calculate how many bytes we have left in this TCP segment */
+ uint32_t cb = u16MaxPktLen - pThis->u16TxPktLen;
+ if (cb > pDesc->data.cmd.u20DTALEN)
+ {
+     /* This descriptor fits completely into current segment */
+     cb = pDesc->data.cmd.u20DTALEN;
+     rc = e1kFallbackAddSegment(pThis, pDesc->data.u64BufAddr, cb,
+                 pDesc->data.cmd.fEOP /*fSend*/, fOnWorkerThread);
 ```
 
 The function [`e1kFallbackAddSegment`][e1kFallbackAddSegment] will use this value (now as argument `u16Len`) to copy from guest memory into the buffer `aTxPacketFallback` in host memory (through `PDMDevHlpPhysRead`) without further checks to this length, thus causing the buffer overflow (of a buffer capacity of 16288 bytes with a memory size of up to 64K).
 
 ```c
 
-  static int e1kFallbackAddSegment(PE1KSTATE pThis, RTGCPHYS PhysAddr,
-                     uint16_t u16Len, bool fSend, bool fOnWorkerThread)
-  {
-      int rc = VINF_SUCCESS;
-      /* TCP header being transmitted */
-      struct E1kTcpHeader *pTcpHdr = (struct E1kTcpHeader *)
-              (pThis->aTxPacketFallback + pThis->contextTSE.tu.u8CSS);
-      /* IP header being transmitted */
-      struct E1kIpHeader *pIpHdr = (struct E1kIpHeader *)
-              (pThis->aTxPacketFallback + pThis->contextTSE.ip.u8CSS);
+static int e1kFallbackAddSegment(PE1KSTATE pThis, RTGCPHYS PhysAddr,
+                   uint16_t u16Len, bool fSend, bool fOnWorkerThread)
+{
+    int rc = VINF_SUCCESS;
+    /* TCP header being transmitted */
+    struct E1kTcpHeader *pTcpHdr = (struct E1kTcpHeader *)
+            (pThis->aTxPacketFallback + pThis->contextTSE.tu.u8CSS);
+    /* IP header being transmitted */
+    struct E1kIpHeader *pIpHdr = (struct E1kIpHeader *)
+            (pThis->aTxPacketFallback + pThis->contextTSE.ip.u8CSS);
 
-      E1kLog3(("%s e1kFallbackAddSegment: Length=%x, remaining payload=%x,
-               header=%x, send=%RTbool\n", pThis->szPrf, u16Len,
-               pThis->u32PayRemain, pThis->u16HdrRemain, fSend));
-      Assert(pThis->u32PayRemain + pThis->u16HdrRemain > 0);
+    E1kLog3(("%s e1kFallbackAddSegment: Length=%x, remaining payload=%x,
+             header=%x, send=%RTbool\n", pThis->szPrf, u16Len,
+             pThis->u32PayRemain, pThis->u16HdrRemain, fSend));
+    Assert(pThis->u32PayRemain + pThis->u16HdrRemain > 0);
 
-      PDMDevHlpPhysRead(pThis->CTX_SUFF(pDevIns), PhysAddr,
-                        pThis->aTxPacketFallback + pThis->u16TxPktLen, u16Len);
+    PDMDevHlpPhysRead(pThis->CTX_SUFF(pDevIns), PhysAddr,
+                      pThis->aTxPacketFallback + pThis->u16TxPktLen, u16Len);
 ```
 
 
@@ -170,37 +170,37 @@ A (minor) complication in this attack vector is worth mentioning for completenes
 
 ```c
 
-   while (e1kLocateTxPacket(pThis))
-   {
-       fIncomplete = false;
-       /* Found a complete packet, allocate it. */
-       rc = e1kXmitAllocBuf(pThis, pThis->fGSO);
-       /* If we're out of bandwidth we'll come back later. */
-       if (RT_FAILURE(rc))
-           goto out;
-       /* Copy the packet to allocated buffer and send it. */
-       rc = e1kXmitPacket(pThis, fOnWorkerThread);
-       /* If we're out of bandwidth we'll come back later. */
-       if (RT_FAILURE(rc))
-           goto out;
-   }
+while (e1kLocateTxPacket(pThis))
+{
+   fIncomplete = false;
+   /* Found a complete packet, allocate it. */
+   rc = e1kXmitAllocBuf(pThis, pThis->fGSO);
+   /* If we're out of bandwidth we'll come back later. */
+   if (RT_FAILURE(rc))
+       goto out;
+   /* Copy the packet to allocated buffer and send it. */
+   rc = e1kXmitPacket(pThis, fOnWorkerThread);
+   /* If we're out of bandwidth we'll come back later. */
+   if (RT_FAILURE(rc))
+       goto out;
+}
 ```
 
 This seems to happen because [`e1kLocateTxPacket`][e1kLocateTxPacket] prematurely returns with `True` in the case where `cbTxAlloc` is not zero, and doesn't reach the code that checks if `iTxDCurrent` is equal to  `nTxDFetched` (the usual case where all descriptors have been processed), which would normally make the function return `False`, effectively terminating the aforementioned loop.
 
 ```c
 
-   static bool e1kLocateTxPacket(PE1KSTATE pThis)
+static bool e1kLocateTxPacket(PE1KSTATE pThis)
+{
+   LogFlow(("%s e1kLocateTxPacket: ENTER cbTxAlloc=%d\n",
+            pThis->szPrf, pThis->cbTxAlloc));
+   /* Check if we have located the packet already. */
+   if (pThis->cbTxAlloc)
    {
-       LogFlow(("%s e1kLocateTxPacket: ENTER cbTxAlloc=%d\n",
+       LogFlow(("%s e1kLocateTxPacket: RET true cbTxAlloc=%d\n",
                 pThis->szPrf, pThis->cbTxAlloc));
-       /* Check if we have located the packet already. */
-       if (pThis->cbTxAlloc)
-       {
-           LogFlow(("%s e1kLocateTxPacket: RET true cbTxAlloc=%d\n",
-                    pThis->szPrf, pThis->cbTxAlloc));
-           return true;
-       }
+       return true;
+   }
 ```
 
 This translates to the requirement that the first packet sent to the device (after setting the loopback mode) has to be the one that triggers the overflow, otherwise the VM will hang (ending with a DoS rather than an RCE).

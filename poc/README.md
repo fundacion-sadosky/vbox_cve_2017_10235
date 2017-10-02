@@ -4,22 +4,23 @@ This PoC uses a modified version of the Linux kernel to trigger, from the guest,
 
 To verify the PoC install the kernel package inside the guest:
 
-.. code-block:: bash
+```bash
 
-	sudo dpkg -i linux-image-4.8.0-vbox-e1k-buffer-overflow-poc_4.8.0-1_amd64.deb
-	sudo reboot
+sudo dpkg -i linux-image-4.8.0-vbox-e1k-buffer-overflow-poc_4.8.0-1_amd64.deb
+sudo reboot
+```
 
 The Linux kernel v4.8.0 (closest version to the current Ubuntu 16.04 kernel) was used, and its *Intel PRO/1000 Linux driver* (``drivers/net/ethernet/intel/e1000/e1000_main.c``) was modified to generate the transmit descriptors with the required characteristics to trigger the bug. An arbitrary value was chosen for the overflow length, of 50.000 bytes (has to be lower than 64K), to ensure a crash :
 
-::
-
-	Context Descriptor:
-		* MSS: 50.000
-		* PAYLEN: 50.000
-		* TUCMD.TSE: 1 (TCP Segmentation Enabled)
-	Data Descriptor:
-		* DTALEN: 50.000
-		* DCMD.TSE: 1
+```
+Context Descriptor:
+	* MSS: 50.000
+	* PAYLEN: 50.000
+	* TUCMD.TSE: 1 (TCP Segmentation Enabled)
+Data Descriptor:
+	* DTALEN: 50.000
+	* DCMD.TSE: 1
+```
 
 Both TSE flags have to be enabled (in the context and data descriptors) because different parts of the VBox code evaluate one or the other according to the context.
 
@@ -29,9 +30,10 @@ Also, because of the potential bug in the loopback mode (described in the report
 
 The modification to the driver (except for informative ``printk()`` calls) are enclosed in ``#ifdef`` clauses that evaluate the definition of the preprocessor constant ``VBOX_BUFFER_OVERFLOW_POC``, for conveniently disabling it and resuming normal operation (by commenting the corresponding ``#define``). These modifications are included in a [patch](./0001-e1k-buffer-overflow-poc.patch) that can be applied with the following code:
 
-.. code-block:: bash
+```bash
 
-	git clone git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git
-	cd linux-stable
-	git checkout -b e1k-buffer-overflow-poc v4.8
-	git apply ../0001-e1k-buffer-overflow-poc.patch
+git clone git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git
+cd linux-stable
+git checkout -b e1k-buffer-overflow-poc v4.8
+git apply ../0001-e1k-buffer-overflow-poc.patch
+```
