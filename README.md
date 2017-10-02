@@ -4,9 +4,7 @@
 
 The following document details a bug found in VirtualBox v5.1.22 (now fixed in v5.1.24), in the guest device emulation component `DevE1000` (*Intel 82540EM Ethernet Controller Emulation*), in the function `e1kFallbackAddToFrame`, which leads to a buffer overflow in the host when the guest OS is controlled by an attacker.
 
-The bug was acknowledged by Oracle in the `CPU of July 2017
-<http://www.oracle.com/technetwork/security-advisory/cpujul2017-3236622.html#AppendixOVIR>`_ with the issued `CVE-2017-10235
-<https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2017-10235>`_.
+The bug was acknowledged by Oracle in the [CPU of July 2017](http://www.oracle.com/technetwork/security-advisory/cpujul2017-3236622.html#AppendixOVIR) with the issued [CVE-2017-10235](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2017-10235).
 
 The vulnerability was corroborated with both a Linux (Ubuntu 16.04) and a Windows (v8.1) host running a Linux (also Ubuntu 16.04) guest, but the vulnerability could be triggered in many different host/guest combinations. In all scenarios the default network configuration is assumed: only one network adapter **attached to NAT** of type **Intel PRO/1000 MT Desktop (82540EM)**.
 
