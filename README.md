@@ -5,7 +5,7 @@ CVE-2017-10235: VirtualBox E1000 device buffer overflow
 Introduction
 ============
 
-The following document details a bug found in VirtualBox v5.1.22 (now fixed in v5.1.24), in the guest device emulation component ``DevE1000`` (*Intel 82540EM Ethernet Controller Emulation*), in the function ``e1kFallbackAddToFrame``, which leads to a buffer overflow in the host when the guest OS is controlled by an attacker.
+The following document details a bug found in VirtualBox v5.1.22 (now fixed in v5.1.24), in the guest device emulation component `DevE1000` (*Intel 82540EM Ethernet Controller Emulation*), in the function `e1kFallbackAddToFrame`, which leads to a buffer overflow in the host when the guest OS is controlled by an attacker.
 
 The bug was acknowledged by Oracle in the `CPU of July 2017
 <http://www.oracle.com/technetwork/security-advisory/cpujul2017-3236622.html#AppendixOVIR>`_ with the issued `CVE-2017-10235
@@ -13,33 +13,33 @@ The bug was acknowledged by Oracle in the `CPU of July 2017
 
 The vulnerability was corroborated with both a Linux (Ubuntu 16.04) and a Windows (v8.1) host running a Linux (also Ubuntu 16.04) guest, but the vulnerability could be triggered in many different host/guest combinations. In all scenarios the default network configuration is assumed: only one network adapter **attached to NAT** of type **Intel PRO/1000 MT Desktop (82540EM)**.
 
-Since control structures (including function pointers) can be overwritten with attacker controlled data, it is safe to assume that remote code execution could be achieved in many scenarios. Oracle assigned a low CVSS score to this bug because it regarded that it had a ``None`` confidentiality risk and a ``Low`` integrity, which we believe does not reflect the full compromising potentiality of this bug (an explanation for the possibility of RCE is given below).
+Since control structures (including function pointers) can be overwritten with attacker controlled data, it is safe to assume that remote code execution could be achieved in many scenarios. Oracle assigned a low CVSS score to this bug because it regarded that it had a `None` confidentiality risk and a `Low` integrity, which we believe does not reflect the full compromising potentiality of this bug (an explanation for the possibility of RCE is given below).
 
 
 Bug description and exploitation
 ================================
 
-The VirtualBox code that implements the emulation of the Intel 82540EM Ethernet Controller (in ``src/VBox/Devices/Network/DevE1000.cpp``), in the function [``e1kFallbackAddToFrame``](https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L4286), implements the hardware TCP Segmentation:
+The VirtualBox code that implements the emulation of the Intel 82540EM Ethernet Controller (in `src/VBox/Devices/Network/DevE1000.cpp`), in the function [`e1kFallbackAddToFrame`][e1kFallbackAddToFrame], implements the hardware TCP Segmentation:
 
 ```c
 
- static int e1kFallbackAddToFrame(PE1KSTATE pThis, E1KTXDESC *pDesc,
-                                  bool fOnWorkerThread)
- {
- #ifdef VBOX_STRICT
-     PPDMSCATTERGATHER pTxSg = pThis->CTX_SUFF(pTxSg);
-     Assert(e1kGetDescType(pDesc) == E1K_DTYP_DATA);
-     Assert(pDesc->data.cmd.fTSE);
-     Assert(!e1kXmitIsGsoBuf(pTxSg));
- #endif
+static int e1kFallbackAddToFrame(PE1KSTATE pThis, E1KTXDESC *pDesc,
+                                bool fOnWorkerThread)
+{
+#ifdef VBOX_STRICT
+   PPDMSCATTERGATHER pTxSg = pThis->CTX_SUFF(pTxSg);
+   Assert(e1kGetDescType(pDesc) == E1K_DTYP_DATA);
+   Assert(pDesc->data.cmd.fTSE);
+   Assert(!e1kXmitIsGsoBuf(pTxSg));
+#endif
 
-     uint16_t u16MaxPktLen = pThis->contextTSE.dw3.u8HDRLEN +
-                             pThis->contextTSE.dw3.u16MSS;
-     Assert(u16MaxPktLen != 0);
-     Assert(u16MaxPktLen < E1K_MAX_TX_PKT_SIZE);
+   uint16_t u16MaxPktLen = pThis->contextTSE.dw3.u8HDRLEN +
+                           pThis->contextTSE.dw3.u16MSS;
+   Assert(u16MaxPktLen != 0);
+   Assert(u16MaxPktLen < E1K_MAX_TX_PKT_SIZE);
 ```
 
-This function correctly checks that the max TX packet length (``u16MaxPktLen``) is below the standard maximum of 16288 bytes (``E1K_MAX_TX_PKT_SIZE``), but does it in the form of an ``Assert`` macro that will be disabled in a release build, effectively leaving the check useless for the end user. This can be contrasted to the analogous function ``e1kAddToFrame``, which enforces the check with an explicit ``if`` instead of the ``Assert``:
+This function correctly checks that the max TX packet length (`u16MaxPktLen`) is below the standard maximum of 16288 bytes (`E1K_MAX_TX_PKT_SIZE`), but does it in the form of an `Assert` macro that will be disabled in a release build, effectively leaving the check useless for the end user. This can be contrasted to the analogous function [`e1kAddToFrame`][e1kAddToFrame], which enforces the check with an explicit `if` instead of the `Assert`:
 
 ```c
 
@@ -58,9 +58,9 @@ This function correctly checks that the max TX packet length (``u16MaxPktLen``) 
        }
 ```
 
-The difference between the use of the normal function (``e1kAddToFrame``) and the fallback (``e1kFallbackAddToFrame``) is decided in ``e1kXmitDesc()`` and  depends on two factors: that the TSE flag is enabled in the data/context descriptors (controlled by the OS using the guest machine) and that the GSO flag is disabled. The latter depends on many factors, and hence there are many ways to disable it, but the most convenient is to enable the loopback mode, which is configured through the Receive Control Register (in the ``RCTL.LBM`` bits), also controlled by the guest OS.
+The difference between the use of the normal function (`e1kAddToFrame`) and the fallback (`e1kFallbackAddToFrame`) is decided in `e1kXmitDesc()` and  depends on two factors: that the TSE flag is enabled in the data/context descriptors (controlled by the OS using the guest machine) and that the GSO flag is disabled. The latter depends on many factors, and hence there are many ways to disable it, but the most convenient is to enable the loopback mode, which is configured through the Receive Control Register (in the `RCTL.LBM` bits), also controlled by the guest OS.
 
-Enabling the loopback mode will make the function ``e1kXmitAllocBuf`` use the ``aTxPacketFallback`` buffer (*Transmit packet buffer use for TSE fallback and loopback*) for the allocation of the PDM scatter/gather buffer, with the mentioned length of 16288 bytes (``E1K_MAX_TX_PKT_SIZE``), and to signal that GSO will be disabled (by setting a ``NULL`` in ``pvUser``).
+Enabling the loopback mode will make the function [`e1kXmitAllocBuf`][e1kXmitAllocBuf] use the `aTxPacketFallback` buffer (*Transmit packet buffer use for TSE fallback and loopback*) for the allocation of the PDM scatter/gather buffer, with the mentioned length of 16288 bytes (`E1K_MAX_TX_PKT_SIZE`), and to signal that GSO will be disabled (by setting a `NULL` in `pvUser`).
 
 ```c
 
@@ -87,7 +87,7 @@ Enabling the loopback mode will make the function ``e1kXmitAllocBuf`` use the ``
    }
 ```
 
-This will cause the call to the function ``e1kXmitIsGsoBuf`` (inside ``e1kXmitDesc``) to return ``False`` and, with the TSE enabled in the data descriptor, the execution flow will go to ``e1kFallbackAddToFrame`` (instead of the safer ``e1kAddToFrame()`` with the correct check).
+This will cause the call to the function `e1kXmitIsGsoBuf` (inside [`e1kXmitDesc`][e1kXmitDesc]) to return `False` and, with the TSE enabled in the data descriptor, the execution flow will go to [`e1kFallbackAddToFrame`][e1kFallbackAddToFrame_call] (instead of the safer function `e1kAddToFrame` with the correct check).
 
 ```c
 
@@ -114,7 +114,7 @@ This will cause the call to the function ``e1kXmitIsGsoBuf`` (inside ``e1kXmitDe
   }
 ```
 
-Inside ``e1kFallbackAddToFrame``, with the aforementioned check disabled in a release build, the MSS can be set arbitrarily large (up to 64K minus the HDRLEN), hence allowing an arbitrarily large ``DTALEN`` to be passed to ``e1kFallbackAddSegment``:
+Inside `e1kFallbackAddToFrame`, with the aforementioned check disabled in a release build, the MSS can be set arbitrarily large (up to 64K minus the HDRLEN), hence allowing an arbitrarily large `DTALEN` to be passed to [`e1kFallbackAddSegment`][e1kFallbackAddSegment_call]:
 
 ```c
 
@@ -134,7 +134,7 @@ Inside ``e1kFallbackAddToFrame``, with the aforementioned check disabled in a re
                      pDesc->data.cmd.fEOP /*fSend*/, fOnWorkerThread);
 ```
 
-The function ``e1kFallbackAddSegment`` will use this value (now as argument ``u16Len``) to copy from guest memory into the buffer ``aTxPacketFallback`` in host memory (through ``PDMDevHlpPhysRead``) without further checks to this length, thus causing the buffer overflow (of a buffer capacity of 16288 bytes with a memory size of up to 64K).
+The function [`e1kFallbackAddSegment`][e1kFallbackAddSegment] will use this value (now as argument `u16Len`) to copy from guest memory into the buffer `aTxPacketFallback` in host memory (through `PDMDevHlpPhysRead`) without further checks to this length, thus causing the buffer overflow (of a buffer capacity of 16288 bytes with a memory size of up to 64K).
 
 ```c
 
@@ -162,16 +162,15 @@ The function ``e1kFallbackAddSegment`` will use this value (now as argument ``u1
 Possible RCE
 ------------
 
-To make this vulnerability more predisposed to an RCE, it has to be noted that the variable just after the buffer is its index (``u16TxPktLen``), used to write on it (as an offset on the argument of ``PDMDevHlpPhysRead``). Controlling this value with an initial buffer overflow (caused by a first data descriptor of length ``E1K_MAX_TX_PKT_SIZE`` + 2 bytes) would then allow to write (in a second call to ``PDMDevHlpPhysRead`` with a second data descriptor) any memory address up to 64K of distance from the buffer, without being necessary to overwrite all the memory in-between  (which would make the attack more complicated, trying to avoid a potential crash).
+To make this vulnerability more predisposed to an RCE, it has to be noted that the variable just after the buffer is its index (`u16TxPktLen`), used to write on it (as an offset on the argument of `PDMDevHlpPhysRead`). Controlling this value with an initial buffer overflow (caused by a first data descriptor of length `E1K_MAX_TX_PKT_SIZE` + 2 bytes) would then allow to write (in a second call to `PDMDevHlpPhysRead` with a second data descriptor) any memory address up to 64K of distance from the buffer, without being necessary to overwrite all the memory in-between  (which would make the attack more complicated, trying to avoid a potential crash).
 
-Close to the target buffer (defined in https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L1181
-), some lines below and within the 64K range, the ``g_aE1kRegMap`` structured is defined (in https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L1363), which includes a vector of function pointers that implement reading and writing handlers (``pfnRead`` and ``pfnWrite``) which would be an ideal target for the second buffer overflow to facilitate an RCE.
+Close to the target buffer [`aTxPacketFallback`][aTxPacketFallback], some lines below and within the 64K range, the [`g_aE1kRegMap`][g_aE1kRegMap] structured is defined, which includes a vector of function pointers that implement reading and writing handlers (`pfnRead` and `pfnWrite`) which would be an ideal target for the second buffer overflow to facilitate an RCE.
 
 
-Bug in ``e1kXmitAllocBuf``
+Bug in `e1kXmitAllocBuf`
 --------------------------
 
-A (minor) complication in this attack vector is worth mentioning for completeness: there is what seems like a bug in the function ``e1kXmitAllocBuf``, where in the case of being in loopback mode, ``cbTxAlloc`` (*Number of bytes in next packet*) is not reseted to zero, as it is done in the normal case ( in the other branch of its ``if``). This causes the thread to get stuck in the ``while`` loop of ``e1kLocateTxPacket`` (inside ``e1kXmitPending``):
+A (minor) complication in this attack vector is worth mentioning for completeness: there is what seems like a bug in the function [`e1kXmitAllocBuf`][e1kXmitAllocBuf], where in the case of being in loopback mode, [`cbTxAlloc`][cbTxAlloc] (*Number of bytes in next packet*) is not reseted to zero, as it is done in the normal case ( in the other branch of its `if`). This causes the thread to get stuck in the `while` loop of `e1kLocateTxPacket` (inside `e1kXmitPending`):
 
 ```c
 
@@ -191,7 +190,7 @@ A (minor) complication in this attack vector is worth mentioning for completenes
    }
 ```
 
-This seems to happen because ``e1kLocateTxPacket`` prematurely returns with ``True`` in the case where ``cbTxAlloc`` is not zero, and doesn't reach the code that checks if ``iTxDCurrent`` is equal to  ``nTxDFetched`` (the usual case where all descriptors have been processed), which would normally make the function return ``False``, effectively terminating the aforementioned loop.
+This seems to happen because [`e1kLocateTxPacket`][e1kLocateTxPacket] prematurely returns with `True` in the case where `cbTxAlloc` is not zero, and doesn't reach the code that checks if `iTxDCurrent` is equal to  `nTxDFetched` (the usual case where all descriptors have been processed), which would normally make the function return `False`, effectively terminating the aforementioned loop.
 
 ```c
 
@@ -221,6 +220,19 @@ Possible solutions
 ==================
 
 The vulnerability was fixed in `Changeset 67974 <https://www.virtualbox.org/changeset/67974/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp
->`_ (``bugref:8881``). The checks made as ``Assert()`` in ``e1kFallbackAddToFrame`` were converted to explicit checks as ``if`` statements, that now remain active in a release build (similar to what was already done in ``e1kAddToFrame``). Also ``cbTxAlloc`` is now set to zero in both branches (loopback mode and normal mode) in ``e1kXmitAllocBuf``.
+>`_ (`bugref:8881`). The checks made as `Assert()` in `e1kFallbackAddToFrame` were converted to explicit checks as `if` statements, that now remain active in a release build (similar to what was already done in `e1kAddToFrame`). Also `cbTxAlloc` is now set to zero in both branches (loopback mode and normal mode) in `e1kXmitAllocBuf`.
 
-An additional (defensive) check suggested here, not implemented in the changeset, could be to place, in ``e1kFallbackAddSegment`` (and similarly in ``e1kAddToFrame``), before the call to ``PDMDevHlpPhysRead``, to explicitly check for potential overflow the buffer with guest memory (mainly that ``u16TxPktLen`` plus ``u16Len`` be less that the ``aTxPacketFallback`` buffer length).
+An additional (defensive) check suggested here, not implemented in the changeset, could be to place, in `e1kFallbackAddSegment` (and similarly in `e1kAddToFrame`), before the call to `PDMDevHlpPhysRead`, to explicitly check for potential overflow the buffer with guest memory (mainly that `u16TxPktLen` plus `u16Len` be less that the `aTxPacketFallback` buffer length).
+
+
+[e1kFallbackAddToFrame]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L4351
+[e1kAddToFrame]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L4419
+[e1kXmitAllocBuf]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L3684
+[e1kXmitDesc]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L48107
+[e1kFallbackAddToFrame_call]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L4898
+[e1kFallbackAddSegment_call]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L4364
+[e1kFallbackAddSegment]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L4153
+[aTxPacketFallback]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L1180
+[g_aE1kRegMap]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L1363
+[cbTxAlloc]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L1166
+[e1kLocateTxPacket]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L4985
