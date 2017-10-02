@@ -29,7 +29,7 @@ This corrupted descriptors are not injected (as they should be) in the TX ring, 
 
 Also, because of the potential bug in the loopback mode (described in the report), legacy descriptors (which are normally the first ones being sent by the OS) are discarded, as the loopback mode is enabled from the beginning in ``e1000_setup_rctl()`` (and not just before sending the corrupted descriptors), so the first packet sent to the emulation software has to be the one causing the overflow (after that, an infinite loop is entered and subsequent descriptors are not processed).
 
-The modification to the driver (except for informative ``printk()`` calls) are enclosed in ``#ifdef`` clauses that evaluate the definition of the preprocessor constant ``VBOX_BUFFER_OVERFLOW_POC``, for conveniently disabling it and resuming normal operation (by commenting the corresponding ``#define``). These modifications are included in a patch (``0001-e1k-buffer-overflow-poc.patch``) that can be applied with the following code:
+The modification to the driver (except for informative ``printk()`` calls) are enclosed in ``#ifdef`` clauses that evaluate the definition of the preprocessor constant ``VBOX_BUFFER_OVERFLOW_POC``, for conveniently disabling it and resuming normal operation (by commenting the corresponding ``#define``). These modifications are included in a patch (<./0001-e1k-buffer-overflow-poc.patch>) that can be applied with the following code:
 
 .. code-block:: bash
 
