@@ -19,30 +19,29 @@ Since control structures (including function pointers) can be overwritten with a
 Bug description and exploitation
 ================================
 
-The VirtualBox code that implements the emulation of the Intel 82540EM Ethernet Controller (in ``src/VBox/Devices/Network/DevE1000.cpp``), in the function ``e1kFallbackAddToFrame``, implements the hardware TCP Segmentation:
+The VirtualBox code that implements the emulation of the Intel 82540EM Ethernet Controller (in ``src/VBox/Devices/Network/DevE1000.cpp``), in the function [``e1kFallbackAddToFrame``](https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L4286), implements the hardware TCP Segmentation:
 
 ```c
 
-   static int e1kFallbackAddToFrame(PE1KSTATE pThis, E1KTXDESC *pDesc,
-                                    bool fOnWorkerThread)
-   {
-   #ifdef VBOX_STRICT
-       PPDMSCATTERGATHER pTxSg = pThis->CTX_SUFF(pTxSg);
-       Assert(e1kGetDescType(pDesc) == E1K_DTYP_DATA);
-       Assert(pDesc->data.cmd.fTSE);
-       Assert(!e1kXmitIsGsoBuf(pTxSg));
-   #endif
+ static int e1kFallbackAddToFrame(PE1KSTATE pThis, E1KTXDESC *pDesc,
+                                  bool fOnWorkerThread)
+ {
+ #ifdef VBOX_STRICT
+     PPDMSCATTERGATHER pTxSg = pThis->CTX_SUFF(pTxSg);
+     Assert(e1kGetDescType(pDesc) == E1K_DTYP_DATA);
+     Assert(pDesc->data.cmd.fTSE);
+     Assert(!e1kXmitIsGsoBuf(pTxSg));
+ #endif
 
-       uint16_t u16MaxPktLen = pThis->contextTSE.dw3.u8HDRLEN +
-                               pThis->contextTSE.dw3.u16MSS;
-       Assert(u16MaxPktLen != 0);
-       Assert(u16MaxPktLen < E1K_MAX_TX_PKT_SIZE);
-
+     uint16_t u16MaxPktLen = pThis->contextTSE.dw3.u8HDRLEN +
+                             pThis->contextTSE.dw3.u16MSS;
+     Assert(u16MaxPktLen != 0);
+     Assert(u16MaxPktLen < E1K_MAX_TX_PKT_SIZE);
 ```
 
 This function correctly checks that the max TX packet length (``u16MaxPktLen``) is below the standard maximum of 16288 bytes (``E1K_MAX_TX_PKT_SIZE``), but does it in the form of an ``Assert`` macro that will be disabled in a release build, effectively leaving the check useless for the end user. This can be contrasted to the analogous function ``e1kAddToFrame``, which enforces the check with an explicit ``if`` instead of the ``Assert``:
 
-.. code-block:: c
+```c
 
    static bool e1kAddToFrame(PE1KSTATE pThis, RTGCPHYS PhysAddr,
                              uint32_t cbFragment)
@@ -57,12 +56,13 @@ This function correctly checks that the max TX packet length (``u16MaxPktLen``) 
                    pThis->szPrf, cbNewPkt, E1K_MAX_TX_PKT_SIZE));
            return false;
        }
+```
 
 The difference between the use of the normal function (``e1kAddToFrame``) and the fallback (``e1kFallbackAddToFrame``) is decided in ``e1kXmitDesc()`` and  depends on two factors: that the TSE flag is enabled in the data/context descriptors (controlled by the OS using the guest machine) and that the GSO flag is disabled. The latter depends on many factors, and hence there are many ways to disable it, but the most convenient is to enable the loopback mode, which is configured through the Receive Control Register (in the ``RCTL.LBM`` bits), also controlled by the guest OS.
 
 Enabling the loopback mode will make the function ``e1kXmitAllocBuf`` use the ``aTxPacketFallback`` buffer (*Transmit packet buffer use for TSE fallback and loopback*) for the allocation of the PDM scatter/gather buffer, with the mentioned length of 16288 bytes (``E1K_MAX_TX_PKT_SIZE``), and to signal that GSO will be disabled (by setting a ``NULL`` in ``pvUser``).
 
-.. code-block:: c
+```c
 
    if (RT_LIKELY(GET_BITS(RCTL, LBM) != RCTL_LBM_TCVR))
    {
@@ -85,10 +85,11 @@ Enabling the loopback mode will make the function ``e1kXmitAllocBuf`` use the ``
      pSg->aSegs[0].pvSeg = pThis->aTxPacketFallback;
      pSg->aSegs[0].cbSeg = sizeof(pThis->aTxPacketFallback);
    }
+```
 
 This will cause the call to the function ``e1kXmitIsGsoBuf`` (inside ``e1kXmitDesc``) to return ``False`` and, with the TSE enabled in the data descriptor, the execution flow will go to ``e1kFallbackAddToFrame`` (instead of the safer ``e1kAddToFrame()`` with the correct check).
 
-.. code-block:: c
+```c
 
   /*
    * Add the descriptor data to the frame.  If the frame is complete,
@@ -111,10 +112,11 @@ This will cause the call to the function ``e1kXmitIsGsoBuf`` (inside ``e1kXmitDe
       STAM_COUNTER_INC(&pThis->StatTxPathFallback);
       rc = e1kFallbackAddToFrame(pThis, pDesc, fOnWorkerThread);
   }
+```
 
 Inside ``e1kFallbackAddToFrame``, with the aforementioned check disabled in a release build, the MSS can be set arbitrarily large (up to 64K minus the HDRLEN), hence allowing an arbitrarily large ``DTALEN`` to be passed to ``e1kFallbackAddSegment``:
 
-.. code-block:: c
+```c
 
    /*
    * Carve out segments.
@@ -130,10 +132,11 @@ Inside ``e1kFallbackAddToFrame``, with the aforementioned check disabled in a re
          cb = pDesc->data.cmd.u20DTALEN;
          rc = e1kFallbackAddSegment(pThis, pDesc->data.u64BufAddr, cb,
                      pDesc->data.cmd.fEOP /*fSend*/, fOnWorkerThread);
+```
 
 The function ``e1kFallbackAddSegment`` will use this value (now as argument ``u16Len``) to copy from guest memory into the buffer ``aTxPacketFallback`` in host memory (through ``PDMDevHlpPhysRead``) without further checks to this length, thus causing the buffer overflow (of a buffer capacity of 16288 bytes with a memory size of up to 64K).
 
-.. code-block:: c
+```c
 
   static int e1kFallbackAddSegment(PE1KSTATE pThis, RTGCPHYS PhysAddr,
                      uint16_t u16Len, bool fSend, bool fOnWorkerThread)
@@ -153,6 +156,7 @@ The function ``e1kFallbackAddSegment`` will use this value (now as argument ``u1
 
       PDMDevHlpPhysRead(pThis->CTX_SUFF(pDevIns), PhysAddr,
                         pThis->aTxPacketFallback + pThis->u16TxPktLen, u16Len);
+```
 
 
 Possible RCE
@@ -169,7 +173,7 @@ Bug in ``e1kXmitAllocBuf``
 
 A (minor) complication in this attack vector is worth mentioning for completeness: there is what seems like a bug in the function ``e1kXmitAllocBuf``, where in the case of being in loopback mode, ``cbTxAlloc`` (*Number of bytes in next packet*) is not reseted to zero, as it is done in the normal case ( in the other branch of its ``if``). This causes the thread to get stuck in the ``while`` loop of ``e1kLocateTxPacket`` (inside ``e1kXmitPending``):
 
-.. code-block:: c
+```c
 
    while (e1kLocateTxPacket(pThis))
    {
@@ -185,10 +189,11 @@ A (minor) complication in this attack vector is worth mentioning for completenes
        if (RT_FAILURE(rc))
            goto out;
    }
+```
 
 This seems to happen because ``e1kLocateTxPacket`` prematurely returns with ``True`` in the case where ``cbTxAlloc`` is not zero, and doesn't reach the code that checks if ``iTxDCurrent`` is equal to  ``nTxDFetched`` (the usual case where all descriptors have been processed), which would normally make the function return ``False``, effectively terminating the aforementioned loop.
 
-.. code-block:: c
+```c
 
    static bool e1kLocateTxPacket(PE1KSTATE pThis)
    {
@@ -201,6 +206,7 @@ This seems to happen because ``e1kLocateTxPacket`` prematurely returns with ``Tr
                     pThis->szPrf, pThis->cbTxAlloc));
            return true;
        }
+```
 
 This translates to the requirement that the first packet sent to the device (after setting the loopback mode) has to be the one that triggers the overflow, otherwise the VM will hang (ending with a DoS rather than an RCE).
 
