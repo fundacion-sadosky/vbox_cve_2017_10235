@@ -13,7 +13,7 @@ Since control structures (including function pointers) can be overwritten with a
 
 ## Bug description and exploitation
 
-The VirtualBox code that implements the emulation of the Intel 82540EM Ethernet Controller (in `src/VBox/Devices/Network/DevE1000.cpp`), in the function [`e1kFallbackAddToFrame`][e1kFallbackAddToFrame], implements the hardware TCP Segmentation:
+The VirtualBox code that implements the emulation of the [Intel 82540EM Ethernet Controller][intel_manual] (in [`src/VBox/Devices/Network/DevE1000.cpp`][DevE1000_cpp]), in the function [`e1kFallbackAddToFrame`][e1kFallbackAddToFrame], implements the hardware TCP Segmentation:
 
 ```c
 
@@ -216,6 +216,7 @@ The vulnerability was fixed in [Changeset 67974][Changeset_67974] (`bugref:8881`
 An additional (defensive) check suggested here, not implemented in the changeset, could be to place, in `e1kFallbackAddSegment` (and similarly in `e1kAddToFrame`), before the call to `PDMDevHlpPhysRead`, to explicitly check for potential overflow the buffer with guest memory (mainly that `u16TxPktLen` plus `u16Len` be less that the `aTxPacketFallback` buffer length).
 
 
+[DevE1000_cpp]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966
 [e1kFallbackAddToFrame]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L4351
 [e1kAddToFrame]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L4419
 [e1kXmitAllocBuf]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L3684
@@ -229,3 +230,4 @@ An additional (defensive) check suggested here, not implemented in the changeset
 [e1kLocateTxPacket]: https://www.virtualbox.org/browser/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp?rev=64966#L4985
 [poc_download]: https://github.com/fundacion-sadosky/vbox_cve_2017_10235/releases/download/v1.0/linux-image-4.8.0-vbox-e1k-buffer-overflow-poc_4.8.0-1_amd64.deb
 [Changeset_67974]: https://www.virtualbox.org/changeset/67974/vbox/trunk/src/VBox/Devices/Network/DevE1000.cpp
+[intel_manual]: https://www.intel.com/content/dam/doc/manual/pci-pci-x-family-gbe-controllers-software-dev-manual.pdf
