@@ -1,6 +1,8 @@
 # Proof of Concept for the E1000 buffer overflow
 
-This PoC uses a modified version of the Linux kernel to trigger, from the guest, a buffer overflow in the host. It usually just causes a crash in the host, resulting in a DoS, but this is just for simplicity, a more elaborate attack could be crafted that could lead to a RCE. This PoC was tested on an Ubuntu 16.04 guest to trigger the overflow.
+This PoC uses a modified version of the Linux kernel to trigger, from the guest, a buffer overflow in the host. It usually just causes a crash in the host, resulting in a DoS, but this is just for simplicity, a more elaborate attack could be crafted that could lead to an RCE. This PoC was tested on an Ubuntu 16.04 guest to trigger the overflow. This modified kernel is available for [download][poc_download] from this repo.
+
+[poc_download]: https://github.com/fundacion-sadosky/vbox_cve_2017_10235/releases/download/v1.0/linux-image-4.8.0-vbox-e1k-buffer-overflow-poc_4.8.0-1_amd64.deb
 
 To verify the PoC install the kernel package inside the guest:
 
